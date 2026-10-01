@@ -9,8 +9,10 @@ This folder has everything you need to build the Wandr database in Supabase.
 | `schema_creation.sql` | Creates all the tables. |
 | `rls_rules.sql` | Adds the security rules (who can see or change each row). |
 | `rpc_functions.sql` | Adds the functions the app calls for actions with rules (finish a step, join an event...). |
+| `storage.sql` | Creates the private `quest-photos` bucket for the photos of quest steps. |
+| `telemetry.sql` | Creates the `telemetry_events` table the apps use to answer BQ1 and BQ2. |
 | `seed_data.sql` | Fills the tables with fake data for testing. |
-| `clean_database.sql` | **Deletes everything.** It removes all tables, functions and the test users. |
+| `clean_database.sql` | **Deletes everything.** It removes all tables, functions, storage rules and the test users. |
 
 ## How to run them
 
@@ -21,10 +23,15 @@ flowchart LR
     A[clean_database.sql] --> B[schema_creation.sql]
     B --> C[rls_rules.sql]
     C --> D[rpc_functions.sql]
-    D --> E[seed_data.sql]
+    D --> E[storage.sql]
+    E --> F[telemetry.sql]
+    F --> G[seed_data.sql]
 ```
 
 The first time, you can skip `clean_database.sql` because there is nothing to delete yet.
+
+`clean_database.sql` keeps the `quest-photos` bucket and its files, because Supabase only lets you
+delete them from the dashboard. `storage.sql` skips the bucket if it already exists.
 
 ## How login works (Supabase Auth)
 
@@ -114,6 +121,29 @@ The rules for progress:
 - **Streak** goes up by 1 if your last finished quest was yesterday. It stays
   the same if it was today, and goes back to 1 if it was earlier. Days use
   Bogota time.
+
+## Quest photos (Storage)
+
+Steps with `requires_photo = true` need a photo. The app:
+
+1. Uploads it to the `quest-photos` bucket at `<user id>/<quest id>/<objective id>.jpg`.
+2. Sends that path as `p_photo_url` to `complete_objective`.
+
+The bucket is private. Each user can only upload, read, replace or delete files inside their own
+`<user id>/` folder.
+
+## Telemetry
+
+The apps measure how long some requests take and save each measurement in `telemetry_events`.
+They save them on the phone first and send them in batches.
+
+| `event_name` | Business question | `metadata` |
+| --- | --- | --- |
+| `quest_recommendations_load` | BQ1: average response time for quest recommendations | `radius_km`, `policy`, `result_count`, `from_cache` |
+| `quest_step_response` | BQ2: which quest step has the highest average response time | `quest_id`, `objective_id`, `with_photo` |
+
+The apps can only insert their own rows and can never read them. To answer the questions, run the
+queries at the end of `telemetry.sql` in the SQL editor.
 
 ## Test users
 

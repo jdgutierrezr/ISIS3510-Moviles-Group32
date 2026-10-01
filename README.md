@@ -167,6 +167,7 @@ There are two kinds of calls:
 |                            | "Start quest" button                     | Function · `start_quest(p_quest_id)`                                                                                                                  |
 | **Active Quest Tracker**   | My active quests and checked steps       | Table · `GET /quest_completions?user_id=eq.me&status=eq.pending&select=*,quests(title,quest_objectives(*)),quest_objective_completions(objective_id)` |
 |                            | Check a step                             | Function · `complete_objective(p_quest_id, p_objective_id, p_photo_url)`                                                                              |
+|                            | Upload the photo of a step               | Storage · upload to `quest-photos/<me>/<quest id>/<objective id>.jpg`, then send that path as `p_photo_url`                                            |
 |                            | Give up                                  | Function · `abandon_quest(p_quest_id)`                                                                                                                |
 | **Events**                 | Upcoming events and how many are going   | Table · `GET /events?starts_at=gte.<now>&select=*,places(name),event_attendees(count)&order=starts_at`                                                |
 |                            | Join                                     | Function · `rsvp_event(p_event_id)`                                                                                                                   |
@@ -183,6 +184,7 @@ There are two kinds of calls:
 |                            | Quest history                            | Table · `GET /quest_completions?user_id=eq.me&status=eq.completed&select=completed_at,quests(title,points_reward)`                                    |
 | **Notifications**          | My notifications                         | Table · `GET /notifications?order=created_at.desc`                                                                                                    |
 |                            | Mark as read                             | Table · `PATCH /notifications?id=eq.<id>` with `read_status: true`                                                                                    |
+| **Any screen**             | Send telemetry (BQ1, BQ2)                | Table · `POST /telemetry_events` (a list of rows, see the [database docs](sql/README.md#telemetry))                                                    |
 
 ## Code examples
 

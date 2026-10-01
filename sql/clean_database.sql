@@ -4,7 +4,14 @@
 -- Drops every table and enum (schema must be recreated afterwards)
 -- ============================================
 
+-- Storage policies (the bucket and its files stay: Supabase only lets you delete them from the dashboard)
+drop policy if exists "quest-photos: upload own" on storage.objects;
+drop policy if exists "quest-photos: read own" on storage.objects;
+drop policy if exists "quest-photos: replace own" on storage.objects;
+drop policy if exists "quest-photos: delete own" on storage.objects;
+
 drop table if exists
+  telemetry_events,
   event_attendees,
   events,
   user_locations,
