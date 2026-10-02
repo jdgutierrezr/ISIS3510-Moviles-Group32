@@ -559,6 +559,111 @@ as $$
 $$;
 
 -- ============================================
+-- get_streak_summary: BQ4 - how is my streak evolving vs previous weeks
+-- Returns, for the logged-in user:
+--   points, quests completed and current streak,
+--   active days this week (Mon-Sun),
+--   quests completed in each of the last 4 weeks
+--   and every badge, marked as unlocked or not
+-- Days use Bogota time
+-- ============================================
+
+create or replace function public.get_streak_summary()
+returns jsonb
+language plpgsql
+stable
+set search_path = public
+as $$
+declare
+  v_uid uuid := auth.uid();
+  v_today date := (now() at time zone 'America/Bogota')::date;
+  v_monday date;
+  v_user users;
+  v_total integer;
+  v_this_week jsonb;
+  v_weekly_history jsonb;
+  v_achievements jsonb;
+begin
+  if v_uid is null then
+    raise exception 'Not authenticated';
+  end if;
+
+  select * into v_user from users where id = v_uid;
+
+  if not found then
+    raise exception 'User not found';
+  end if;
+
+  -- Monday of the current week
+  v_monday := v_today - (extract(isodow from v_today)::integer - 1);
+
+  select count(*) into v_total
+  from quest_completions
+  where user_id = v_uid and status = 'completed';
+
+  -- 7 values (Mon-Sun): did the user finish a quest that day?
+  select jsonb_agg(
+    exists (
+      select 1 from quest_completions
+      where user_id = v_uid
+        and status = 'completed'
+        and (completed_at at time zone 'America/Bogota')::date = v_monday + d
+    )
+    order by d
+  )
+  into v_this_week
+  from generate_series(0, 6) as d;
+
+  -- Quests finished in each of the last 4 weeks, oldest first
+  select jsonb_agg(
+    jsonb_build_object(
+      'week_id', to_char(w.week_start, 'DD Mon'),
+      'quests', (
+        select count(*) from quest_completions
+        where user_id = v_uid
+          and status = 'completed'
+          and (completed_at at time zone 'America/Bogota')::date >= w.week_start
+          and (completed_at at time zone 'America/Bogota')::date < w.week_start + 7
+      )
+    )
+    order by w.week_start
+  )
+  into v_weekly_history
+  from (
+    select v_monday - (n * 7) as week_start
+    from generate_series(0, 3) as n
+  ) w;
+
+  -- Every badge, marked as unlocked if the user already earned it
+  select coalesce(jsonb_agg(
+    jsonb_build_object(
+      'id', b.id,
+      'name', b.name,
+      'unlocked', ub.user_id is not null
+    )
+    order by b.created_at
+  ), '[]'::jsonb)
+  into v_achievements
+  from badges b
+  left join user_badges ub on ub.badge_id = b.id and ub.user_id = v_uid;
+
+  return jsonb_build_object(
+    'user_id', v_uid,
+    'stats', jsonb_build_object(
+      'quests_completed', v_total,
+      'points', v_user.current_xp
+    ),
+    'streak', jsonb_build_object(
+      'current_streak', v_user.current_streak,
+      'this_week', v_this_week,
+      'weekly_history', v_weekly_history
+    ),
+    'achievements', v_achievements
+  );
+end;
+$$;
+
+-- ============================================
 -- Permissions: only logged-in users can call the RPC functions
 -- ============================================
 
@@ -573,6 +678,7 @@ revoke execute on function public.accept_friend_request(uuid) from public, anon;
 revoke execute on function public.nearby_places(double precision, double precision, double precision, place_category) from public, anon;
 revoke execute on function public.nearby_quests(double precision, double precision, double precision) from public, anon;
 revoke execute on function public.friends_on_map() from public, anon;
+revoke execute on function public.get_streak_summary() from public, anon;
 
 grant execute on function public.start_quest(uuid) to authenticated;
 grant execute on function public.complete_objective(uuid, uuid, text) to authenticated;
@@ -583,3 +689,4 @@ grant execute on function public.accept_friend_request(uuid) to authenticated;
 grant execute on function public.nearby_places(double precision, double precision, double precision, place_category) to authenticated;
 grant execute on function public.nearby_quests(double precision, double precision, double precision) to authenticated;
 grant execute on function public.friends_on_map() to authenticated;
+grant execute on function public.get_streak_summary() to authenticated;

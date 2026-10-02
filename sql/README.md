@@ -91,6 +91,7 @@ gives XP, may give a badge and tells your friends. These actions live in
 | `nearby_places` | `p_lat`, `p_lng`, `p_radius_km` (default 5), `p_category` (optional) | Places around you, closest first. |
 | `nearby_quests` | `p_lat`, `p_lng`, `p_radius_km` (default 5) | Quests around you, closest first. |
 | `friends_on_map` | none | Friends sharing their location, with how far they are and the quest they are doing. |
+| `get_streak_summary` | none | Streak, points, quests per week, this week's active days and badges of the logged-in user. |
 
 ### What happens when the last step is checked
 
