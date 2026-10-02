@@ -35,6 +35,13 @@ create policy "telemetry_events: insert own" on telemetry_events
 --                                    metadata: radius_km, policy, result_count, from_cache
 --   quest_step_response         BQ2  time of each complete_objective call
 --                                    metadata: quest_id, objective_id, with_photo
+--   quest_viewed                BQ8  funnel: the user opened a quest's details
+--   quest_accepted              BQ8  funnel: the user started the quest
+--   navigation_started          BQ8  funnel: the user opened directions to the place
+--   quest_completed             BQ8  funnel: the last step was checked
+--   quest_abandoned             BQ8  funnel: the user gave up
+--                                    metadata: quest_id, after_previous_step
+--                                    duration_ms = time since the previous funnel step of that quest
 -- ============================================
 
 -- ============================================
@@ -66,3 +73,15 @@ create policy "telemetry_events: insert own" on telemetry_events
 -- group by q.title, o.title
 -- order by avg_ms desc
 -- limit 10;
+
+-- BQ8 (funnel before and during the quest): how many quests reach each step?
+-- The in-quest answer (last step checked before abandoning) is the RPC get_quest_dropoff().
+-- select
+--   event_name,
+--   count(distinct metadata->>'quest_id' || ':' || user_id) as quests_reaching_step,
+--   round(avg(duration_ms) filter (where (metadata->>'after_previous_step')::boolean) / 1000) as avg_seconds_since_previous
+-- from telemetry_events
+-- where event_name in ('quest_viewed', 'quest_accepted', 'navigation_started', 'quest_completed', 'quest_abandoned')
+--   and created_at >= now() - interval '30 days'
+-- group by event_name
+-- order by array_position(array['quest_viewed', 'quest_accepted', 'navigation_started', 'quest_completed', 'quest_abandoned'], event_name);
