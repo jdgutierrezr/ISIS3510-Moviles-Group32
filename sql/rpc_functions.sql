@@ -664,6 +664,62 @@ end;
 $$;
 
 -- ============================================
+-- get_quest_dropoff: BQ8 - in which step do users most often abandon a quest?
+-- For every abandoned quest, takes the last step the user had checked
+-- (0 = gave up before checking any step) and counts how many abandons
+-- stopped there. One row per quest and last step, most frequent first.
+-- security definer: it aggregates every user's abandons, but only returns
+-- counts, never who abandoned.
+-- Note: start_quest on an abandoned quest restarts it and deletes its checked
+-- steps, so a restarted quest stops counting as abandoned.
+-- ============================================
+
+create or replace function public.get_quest_dropoff()
+returns table (
+  quest_id uuid,
+  quest_title text,
+  total_steps integer,
+  last_step integer,
+  last_step_title text,
+  abandoned_count integer,
+  quest_abandoned_total integer
+)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  with abandoned as (
+    select
+      qc.id,
+      qc.quest_id,
+      coalesce(max(o.order_index), 0) as last_step
+    from quest_completions qc
+    left join quest_objective_completions qoc on qoc.completion_id = qc.id
+    left join quest_objectives o on o.id = qoc.objective_id
+    where qc.status = 'abandoned'
+    group by qc.id, qc.quest_id
+  ),
+  grouped as (
+    select a.quest_id, a.last_step, count(*)::integer as abandoned_count
+    from abandoned a
+    group by a.quest_id, a.last_step
+  )
+  select
+    g.quest_id,
+    q.title,
+    (select count(*)::integer from quest_objectives o2 where o2.quest_id = g.quest_id),
+    g.last_step,
+    o.title,
+    g.abandoned_count,
+    (sum(g.abandoned_count) over (partition by g.quest_id))::integer
+  from grouped g
+  join quests q on q.id = g.quest_id
+  left join quest_objectives o on o.quest_id = g.quest_id and o.order_index = g.last_step
+  order by g.abandoned_count desc, q.title, g.last_step;
+$$;
+
+-- ============================================
 -- Permissions: only logged-in users can call the RPC functions
 -- ============================================
 
@@ -679,6 +735,7 @@ revoke execute on function public.nearby_places(double precision, double precisi
 revoke execute on function public.nearby_quests(double precision, double precision, double precision) from public, anon;
 revoke execute on function public.friends_on_map() from public, anon;
 revoke execute on function public.get_streak_summary() from public, anon;
+revoke execute on function public.get_quest_dropoff() from public, anon;
 
 grant execute on function public.start_quest(uuid) to authenticated;
 grant execute on function public.complete_objective(uuid, uuid, text) to authenticated;
@@ -690,3 +747,4 @@ grant execute on function public.nearby_places(double precision, double precisio
 grant execute on function public.nearby_quests(double precision, double precision, double precision) to authenticated;
 grant execute on function public.friends_on_map() to authenticated;
 grant execute on function public.get_streak_summary() to authenticated;
+grant execute on function public.get_quest_dropoff() to authenticated;

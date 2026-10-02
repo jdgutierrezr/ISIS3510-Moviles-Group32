@@ -92,6 +92,7 @@ gives XP, may give a badge and tells your friends. These actions live in
 | `nearby_quests` | `p_lat`, `p_lng`, `p_radius_km` (default 5) | Quests around you, closest first. |
 | `friends_on_map` | none | Friends sharing their location, with how far they are and the quest they are doing. |
 | `get_streak_summary` | none | Streak, points, quests per week, this week's active days and badges of the logged-in user. |
+| `get_quest_dropoff` | none | BQ8: for abandoned quests, the last step users had checked and how many abandons stopped there (all users, counts only). |
 
 ### What happens when the last step is checked
 
@@ -142,6 +143,7 @@ They save them on the phone first and send them in batches.
 | --- | --- | --- |
 | `quest_recommendations_load` | BQ1: average response time for quest recommendations | `radius_km`, `policy`, `result_count`, `from_cache` |
 | `quest_step_response` | BQ2: which quest step has the highest average response time | `quest_id`, `objective_id`, `with_photo` |
+| `quest_viewed`, `quest_accepted`, `navigation_started`, `quest_completed`, `quest_abandoned` | BQ8: quest funnel. `duration_ms` is the time since the previous step of the same quest | `quest_id`, `after_previous_step` |
 
 The apps can only insert their own rows and can never read them. To answer the questions, run the
 queries at the end of `telemetry.sql` in the SQL editor.
