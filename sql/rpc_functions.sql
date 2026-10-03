@@ -561,10 +561,11 @@ $$;
 -- ============================================
 -- get_streak_summary: BQ4 - how is my streak evolving vs previous weeks
 -- Returns, for the logged-in user:
---   points, quests completed and current streak,
+--   points (XP), level, quests completed and current streak,
 --   active days this week (Mon-Sun),
 --   quests completed in each of the last 4 weeks
---   and every badge, marked as unlocked or not
+--   and every badge, marked as unlocked or not,
+--   with its description and the day it was earned
 -- Days use Bogota time
 -- ============================================
 
@@ -634,12 +635,15 @@ begin
     from generate_series(0, 3) as n
   ) w;
 
-  -- Every badge, marked as unlocked if the user already earned it
+  -- Every badge, marked as unlocked if the user already earned it.
+  -- earned_on is the day it was earned (e.g. "Sep 25"), null if locked
   select coalesce(jsonb_agg(
     jsonb_build_object(
       'id', b.id,
       'name', b.name,
-      'unlocked', ub.user_id is not null
+      'description', b.description,
+      'unlocked', ub.user_id is not null,
+      'earned_on', to_char(ub.earned_at at time zone 'America/Bogota', 'Mon DD')
     )
     order by b.created_at
   ), '[]'::jsonb)
@@ -651,7 +655,8 @@ begin
     'user_id', v_uid,
     'stats', jsonb_build_object(
       'quests_completed', v_total,
-      'points', v_user.current_xp
+      'points', v_user.current_xp,
+      'level', v_user.level
     ),
     'streak', jsonb_build_object(
       'current_streak', v_user.current_streak,
