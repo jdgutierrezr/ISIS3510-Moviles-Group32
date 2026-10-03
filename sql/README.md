@@ -12,6 +12,7 @@ This folder has everything you need to build the Wandr database in Supabase.
 | `storage.sql` | Creates the private `quest-photos` bucket for the photos of quest steps. |
 | `telemetry.sql` | Creates the `telemetry_events` table the apps use to answer BQ1 and BQ2. |
 | `seed_data.sql` | Fills the tables with fake data for testing. |
+| `bq11_seed_data.sql` | Optional, rerunnable BQ11 visualization seed: labeled demo neighborhoods and isolated analytics identities. Run after `bq11.sql` in the demo project; existing quests/reviews stay unchanged. |
 | `bq11.sql` | Additive neighborhood catalog and cross-user activity RPC; see [BQ11 deployment and tests](BQ11.md). |
 | `reviews.sql` | Additive review migration: storage, sharing rules, submission and a one-time 20 XP reward. Run after the original schema/RLS/RPC/storage scripts. |
 | `clean_database.sql` | **Deletes everything.** It removes all tables, functions, storage rules and the test users. |

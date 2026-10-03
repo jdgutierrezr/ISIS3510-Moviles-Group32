@@ -22,3 +22,12 @@ run_sql "$sql_dir/tests/bq11_fixtures.sql"
 # A rerun must preserve mappings and completion records.
 run_sql "$sql_dir/bq11.sql"
 run_sql "$sql_dir/tests/bq11_test.sql"
+run_sql "$sql_dir/reviews.sql"
+run_sql "$sql_dir/tests/bq11_review_compatibility_setup.sql"
+# The optional seed must be repeatable without multiplying activity.
+run_sql "$sql_dir/bq11_seed_data.sql"
+run_sql "$sql_dir/bq11_seed_data.sql"
+run_sql "$sql_dir/tests/bq11_seed_test.sql"
+run_sql "$sql_dir/tests/bq11_review_compatibility_test.sql"
+run_sql "$sql_dir/bq11_seed_data.sql"
+run_sql "$sql_dir/tests/bq11_review_reseed_test.sql"
