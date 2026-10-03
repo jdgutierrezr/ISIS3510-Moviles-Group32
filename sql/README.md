@@ -12,6 +12,7 @@ This folder has everything you need to build the Wandr database in Supabase.
 | `storage.sql` | Creates the private `quest-photos` bucket for the photos of quest steps. |
 | `telemetry.sql` | Creates the `telemetry_events` table the apps use to answer BQ1 and BQ2. |
 | `seed_data.sql` | Fills the tables with fake data for testing. |
+| `reviews.sql` | Additive review migration: storage, sharing rules, submission and a one-time 20 XP reward. Run after the original schema/RLS/RPC/storage scripts. |
 | `clean_database.sql` | **Deletes everything.** It removes all tables, functions, storage rules and the test users. |
 
 ## How to run them
@@ -75,6 +76,36 @@ Every table is protected. In short:
   friendship can block.
 
 ## Functions (RPC)
+
+### Rating and review extension
+
+Apply `reviews.sql` once to an existing project. Do not rerun `schema_creation.sql` or
+`clean_database.sql` to install this extension. It leaves the existing Android RPCs unchanged.
+
+After completing a quest, upload zero to four JPEGs to the private `review-photos` bucket
+at `<authenticated user UUID>/<quest UUID>/<photo UUID>.jpg`. Then call
+`submit_quest_review` with `p_quest_id`, `p_rating` (1–5), `p_notes` (up to 500 Unicode
+code points), `p_highlights` (up to ten labels, each 1–60 code points), `p_accuracy`
+(`spotOn`, `mostly`, `notQuite`), `p_feature_on_discovery_map` and `p_photo_paths`.
+
+The RPC validates completion ownership and uploaded photo paths. Its response contains
+`review_id`, `xp_earned`, `already_submitted`, and `feature_on_discovery_map`.
+The first submission awards 20 XP and updates level/tier and the place average rating.
+Retries return the existing review and zero additional XP; they do not edit the review.
+Check for an existing own review before retrying uploads, since submitted photos are immutable.
+An ambiguous network failure must not trigger deletion of uploads that may already be committed.
+Unsubmitted uploads can be deleted by their owner; abandoned-upload cleanup is an operational follow-up.
+
+Authenticated users can read their own reviews and opted-in shared reviews, including their
+photo paths. Use authenticated downloads or short-lived signed URLs for photos; the bucket
+is not public. Shared reviews can be queried by `place_id` for a future community/map feed.
+Direct review writes are prohibited; only the submission RPC can insert and award XP.
+
+Local SQL verification uses an isolated PostgreSQL database. Run
+`sql/tests/reviews_bootstrap.sql`, `schema_creation.sql`, `rls_rules.sql`,
+`rpc_functions.sql`, `storage.sql`, `reviews.sql`, `sql/tests/reviews_test.sql`,
+and `sql/tests/reviews_android_regression.sql` in that order with `psql -v ON_ERROR_STOP=1`.
+The bootstrap is test-only and must never run on the hosted project.
 
 Some actions need more than saving a row. For example, finishing a quest also
 gives XP, may give a badge and tells your friends. These actions live in
