@@ -79,7 +79,13 @@ Every table is protected. In short:
 
 ### Rating and review extension
 
-Apply `reviews.sql` once to an existing project. Do not rerun `schema_creation.sql` or
+Apply `reviews.sql` to an existing project; it is safe to rerun when its schema matches.
+Existing columns, defaults, constraints, foreign keys and the place index are checked;
+incompatible definitions raise an error and roll back instead of being silently skipped.
+Its named policies are recreated transactionally, and the review photo bucket settings
+are reconciled without deleting photos. Reruns do not change review rows or award XP.
+Run the whole file together so its transaction protects the entire migration.
+Do not rerun `schema_creation.sql` or
 `clean_database.sql` to install this extension. It leaves the existing Android RPCs unchanged.
 
 After completing a quest, upload zero to four JPEGs to the private `review-photos` bucket
@@ -105,6 +111,12 @@ Local SQL verification uses an isolated PostgreSQL database. Run
 `sql/tests/reviews_bootstrap.sql`, `schema_creation.sql`, `rls_rules.sql`,
 `rpc_functions.sql`, `storage.sql`, `reviews.sql`, `sql/tests/reviews_test.sql`,
 and `sql/tests/reviews_android_regression.sql` in that order with `psql -v ON_ERROR_STOP=1`.
+In that isolated database, run `psql -v ON_ERROR_STOP=1 -f sql/tests/reviews_rerun_test.sql`
+to verify two reruns preserve submitted reviews, photos, ratings and XP. This test adds
+persistent fixtures and must only run in a disposable test database.
+Run `node sql/tests/reviews_drift_test.mjs psql <connection arguments>` against that same
+test database to check rejection and rollback for incompatible columns, defaults,
+foreign keys and index definitions. The command also accepts a Docker psql invocation.
 The bootstrap is test-only and must never run on the hosted project.
 
 Some actions need more than saving a row. For example, finishing a quest also

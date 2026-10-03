@@ -1,8 +1,14 @@
 -- Additive migration; run after the existing schema, RLS, RPC and storage scripts.
 -- Existing Android RPCs and objective-proof storage are unchanged.
+-- Safe to rerun against the matching schema; incompatible definitions fail atomically.
 begin;
 
-create table public.quest_reviews (
+-- Serialize manual reruns. A temporary reference table lets us verify the full
+-- column/default/constraint contract instead of silently accepting schema drift.
+select pg_advisory_xact_lock(hashtextextended('wandr:review-migration', 0));
+do $migration$
+declare
+  v_definition text := $definition$(
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.users(id) on delete cascade,
   quest_id uuid not null references public.quests(id) on delete cascade,
@@ -16,20 +22,87 @@ create table public.quest_reviews (
   xp_awarded integer not null default 20 check (xp_awarded = 20),
   created_at timestamptz not null default now(),
   unique (user_id, quest_id)
-);
-create index quest_reviews_place_idx on public.quest_reviews(place_id);
+)$definition$;
+  v_actual_columns jsonb;
+  v_expected_columns jsonb;
+  v_actual_constraints jsonb;
+  v_expected_constraints jsonb;
+begin
+  -- PostgreSQL forbids temporary-to-permanent foreign keys. Verify those separately.
+  execute 'create temporary table _wandr_expected_quest_reviews ' ||
+    regexp_replace(v_definition, ' references public\.(users|quests|places)\(id\) on delete cascade', '', 'g') || ' on commit drop';
+  if to_regclass('public.quest_reviews') is null then
+    execute 'create table public.quest_reviews ' || v_definition;
+  end if;
+  if not exists (select 1 from pg_class where oid = 'public.quest_reviews'::regclass and relkind = 'r') then
+    raise exception 'quest_reviews must be an ordinary table; no existing objects were changed';
+  end if;
+  select jsonb_agg(jsonb_build_array(a.attname, format_type(a.atttypid, a.atttypmod),
+    a.attnotnull, pg_get_expr(d.adbin, d.adrelid), a.attidentity, a.attgenerated) order by a.attname)
+  into v_actual_columns
+  from pg_attribute a left join pg_attrdef d on d.adrelid = a.attrelid and d.adnum = a.attnum
+  where a.attrelid = 'public.quest_reviews'::regclass and a.attnum > 0 and not a.attisdropped;
+  select jsonb_agg(jsonb_build_array(a.attname, format_type(a.atttypid, a.atttypmod),
+    a.attnotnull, pg_get_expr(d.adbin, d.adrelid), a.attidentity, a.attgenerated) order by a.attname)
+  into v_expected_columns
+  from pg_attribute a left join pg_attrdef d on d.adrelid = a.attrelid and d.adnum = a.attnum
+  where a.attrelid = 'pg_temp._wandr_expected_quest_reviews'::regclass and a.attnum > 0 and not a.attisdropped;
+  select jsonb_agg(jsonb_build_array(pg_get_constraintdef(oid), convalidated, condeferrable, condeferred)
+    order by pg_get_constraintdef(oid)) into v_actual_constraints
+  from pg_constraint where conrelid = 'public.quest_reviews'::regclass and contype <> 'f';
+  select jsonb_agg(jsonb_build_array(pg_get_constraintdef(oid), convalidated, condeferrable, condeferred)
+    order by pg_get_constraintdef(oid)) into v_expected_constraints
+  from pg_constraint where conrelid = 'pg_temp._wandr_expected_quest_reviews'::regclass;
+  if v_actual_columns is distinct from v_expected_columns
+     or v_actual_constraints is distinct from v_expected_constraints then
+    raise exception 'quest_reviews schema differs from the expected columns, defaults or constraints; migration rolled back. Reconcile the schema before rerunning';
+  end if;
+  if (select count(*) from pg_constraint where conrelid = 'public.quest_reviews'::regclass and contype = 'f') <> 3
+     or (select count(*) from pg_constraint c
+       join (values ('user_id', 'public.users'::regclass), ('quest_id', 'public.quests'::regclass),
+                    ('place_id', 'public.places'::regclass)) expected(column_name, target) on c.confrelid = expected.target
+       where c.conrelid = 'public.quest_reviews'::regclass and c.contype = 'f'
+         and c.conkey = array[(select attnum from pg_attribute where attrelid = c.conrelid and attname = expected.column_name)]::smallint[]
+         and c.confkey = array[(select attnum from pg_attribute where attrelid = c.confrelid and attname = 'id')]::smallint[]
+         and c.confdeltype = 'c' and c.confupdtype = 'a' and c.confmatchtype = 's'
+         and c.convalidated and not c.condeferrable and not c.condeferred) <> 3 then
+    raise exception 'quest_reviews foreign keys differ from the expected ownership relationships; migration rolled back';
+  end if;
+end;
+$migration$;
+create index if not exists quest_reviews_place_idx on public.quest_reviews(place_id);
+do $migration$
+begin
+  if not exists (
+    select 1 from pg_index i join pg_class c on c.oid = i.indexrelid
+    join pg_am am on am.oid = c.relam
+    join pg_attribute a on a.attrelid = i.indrelid and a.attnum = i.indkey[0]
+    where i.indexrelid = 'public.quest_reviews_place_idx'::regclass
+      and i.indrelid = 'public.quest_reviews'::regclass and a.attname = 'place_id'
+      and am.amname = 'btree' and i.indisvalid and i.indisready and not i.indisunique
+      and i.indnatts = 1 and i.indpred is null and i.indexprs is null
+  ) then
+    raise exception 'quest_reviews_place_idx has an incompatible definition; migration rolled back';
+  end if;
+end;
+$migration$;
 alter table public.quest_reviews enable row level security;
 revoke all on public.quest_reviews from anon, authenticated;
 grant select on public.quest_reviews to authenticated;
+drop policy if exists "read own or shared reviews" on public.quest_reviews;
 create policy "read own or shared reviews" on public.quest_reviews
   for select to authenticated
   using (user_id = auth.uid() or feature_on_discovery_map);
 
 insert into storage.buckets(id, name, public, file_size_limit, allowed_mime_types)
 values ('review-photos', 'review-photos', false, 10485760, array['image/jpeg'])
-on conflict (id) do nothing;
+on conflict (id) do update set
+  name = excluded.name, public = excluded.public,
+  file_size_limit = excluded.file_size_limit, allowed_mime_types = excluded.allowed_mime_types;
+drop policy if exists "upload own review photos" on storage.objects;
 create policy "upload own review photos" on storage.objects for insert to authenticated
   with check (bucket_id = 'review-photos' and (storage.foldername(name))[1] = auth.uid()::text);
+drop policy if exists "read own or shared review photos" on storage.objects;
 create policy "read own or shared review photos" on storage.objects for select to authenticated
   using (bucket_id = 'review-photos' and (
     (storage.foldername(name))[1] = auth.uid()::text or exists (
@@ -38,10 +111,12 @@ create policy "read own or shared review photos" on storage.objects for select t
     )
   ));
 -- Photos referenced by submitted reviews are immutable. Retries reuse the same bytes/path.
+drop policy if exists "replace unsubmitted own review photos" on storage.objects;
 create policy "replace unsubmitted own review photos" on storage.objects for update to authenticated
   using (bucket_id = 'review-photos' and (storage.foldername(name))[1] = auth.uid()::text
     and not exists (select 1 from public.quest_reviews r where name = any(r.photo_paths)))
   with check (bucket_id = 'review-photos' and (storage.foldername(name))[1] = auth.uid()::text);
+drop policy if exists "delete unsubmitted own review photos" on storage.objects;
 create policy "delete unsubmitted own review photos" on storage.objects for delete to authenticated
   using (bucket_id = 'review-photos' and (storage.foldername(name))[1] = auth.uid()::text
     and not exists (select 1 from public.quest_reviews r where name = any(r.photo_paths)));
