@@ -27,6 +27,7 @@ drop table if exists
   tags,
   quests,
   places,
+  neighborhoods,
   users
 cascade;
 
@@ -42,7 +43,8 @@ drop function if exists
   public.accept_friend_request(uuid),
   public.nearby_places(double precision, double precision, double precision, place_category),
   public.nearby_quests(double precision, double precision, double precision),
-  public.friends_on_map()
+  public.friends_on_map(),
+  public.neighborhood_quest_activity(integer)
 cascade;
 
 -- Remove seed users from Supabase Auth (real sign-ups are kept)

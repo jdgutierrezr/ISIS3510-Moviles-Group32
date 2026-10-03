@@ -163,6 +163,7 @@ There are two kinds of calls:
 | **Discovery Engine**       | Quests near me                           | Function · `nearby_quests(p_lat, p_lng, p_radius_km)`                                                                                                 |
 |                            | All quests with place and tags           | Table · `GET /quests?select=*,places(name),quest_tags(tags(name))`                                                                                    |
 | **Map**                    | Places near me                           | Function · `nearby_places(p_lat, p_lng, p_radius_km, p_category)`                                                                                     |
+| **Map / BQ11** | Neighborhood activity for partnerships | Function · `neighborhood_quest_activity(p_days)`; see [deployment, data mapping and contract](sql/BQ11.md) |
 | **Quest Details**          | Quest, place and steps                   | Table · `GET /quests?id=eq.<id>&select=*,places(*),quest_objectives(*)&quest_objectives.order=order_index`                                            |
 |                            | "Start quest" button                     | Function · `start_quest(p_quest_id)`                                                                                                                  |
 | **Active Quest Tracker**   | My active quests and checked steps       | Table · `GET /quest_completions?user_id=eq.me&status=eq.pending&select=*,quests(title,quest_objectives(*)),quest_objective_completions(objective_id)` |
