@@ -48,10 +48,10 @@ drop function if exists
   public.nearby_places(double precision, double precision, double precision, place_category),
   public.nearby_quests(double precision, double precision, double precision),
   public.friends_on_map(),
-  public.neighborhood_quest_activity(integer)
   public.neighborhood_quest_activity(integer),
   public.get_streak_summary(),
-  public.get_quest_dropoff()
+  public.get_quest_dropoff(),
+  public.get_step_response_time(integer)
 
   
 cascade;
