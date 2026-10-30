@@ -26,7 +26,15 @@ insert into users (id, name, email, profile_picture, current_xp, level, current_
 ('11111111-1111-1111-1111-111111111111', 'Valentina Gomez', 'valentina.gomez@example.com', 'https://example.com/avatars/valentina.png', 1250, 8, 5, 'trailblazer', 'active'),
 ('22222222-2222-2222-2222-222222222222', 'Santiago Ramirez', 'santiago.ramirez@example.com', 'https://example.com/avatars/santiago.png', 420, 3, 2, 'bogota_scout', 'relaxed'),
 ('33333333-3333-3333-3333-333333333333', 'Camila Torres', 'camila.torres@example.com', 'https://example.com/avatars/camila.png', 2800, 14, 12, 'pathfinder', 'active'),
-('44444444-4444-4444-4444-444444444444', 'Juan David Suarez', 'juan.suarez@example.com', null, 60, 1, 1, 'bogota_scout', null);
+('44444444-4444-4444-4444-444444444444', 'Juan David Suarez', 'juan.suarez@example.com', null, 60, 1, 1, 'bogota_scout', null)
+on conflict (id) do update set
+  name = excluded.name,
+  profile_picture = excluded.profile_picture,
+  current_xp = excluded.current_xp,
+  level = excluded.level,
+  current_streak = excluded.current_streak,
+  tier = excluded.tier,
+  energy_level = excluded.energy_level;
 
 -- ============================================
 -- Places

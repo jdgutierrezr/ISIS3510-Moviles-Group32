@@ -9,7 +9,8 @@ This folder has everything you need to build the Wandr database in Supabase.
 | `schema_creation.sql` | Creates all the tables. |
 | `rls_rules.sql` | Adds the security rules (who can see or change each row). |
 | `rpc_functions.sql` | Adds the functions the app calls for actions with rules (finish a step, join an event...). |
-| `storage.sql` | Creates the private `quest-photos` bucket for the photos of quest steps. |
+| `auth_trigger.sql` | Creates the `handle_new_user` trigger: when someone signs up, it creates their profile in `users`. |
+| `storage.sql` | Creates the private `quest-photos` bucket for the photos of quest steps and the public `avatars` bucket for profile photos. |
 | `telemetry.sql` | Creates the `telemetry_events` table the apps use to answer BQ1 and BQ2. |
 | `seed_data.sql` | Fills the tables with fake data for testing. |
 | `bq11_seed_data.sql` | Optional, rerunnable BQ11 visualization seed: labeled demo neighborhoods and isolated analytics identities. Run after `bq11.sql` in the demo project; existing quests/reviews stay unchanged. |
@@ -26,14 +27,15 @@ flowchart LR
     A[clean_database.sql] --> B[schema_creation.sql]
     B --> C[rls_rules.sql]
     C --> D[rpc_functions.sql]
-    D --> E[storage.sql]
+    D --> T[auth_trigger.sql]
+    T --> E[storage.sql]
     E --> F[telemetry.sql]
     F --> G[seed_data.sql]
 ```
 
 The first time, you can skip `clean_database.sql` because there is nothing to delete yet.
 
-`clean_database.sql` keeps the `quest-photos` bucket and its files, because Supabase only lets you
+`clean_database.sql` keeps the `quest-photos` and `avatars` buckets and their files, because Supabase only lets you
 delete them from the dashboard. `storage.sql` skips the bucket if it already exists.
 
 ## How login works (Supabase Auth)
@@ -45,6 +47,12 @@ Our `users` table only holds the **profile** (name, XP, level, and so on).
 Each profile uses the **same id** as its account in `auth.users`, so they are
 always linked. If an account is deleted, its profile is deleted too.
 
+The app does **not** create the profile. When an account is created, the
+`handle_new_user` trigger (in `auth_trigger.sql`) creates it in `users` with the
+same id, the name sent at sign up and the email. This is needed because, with
+email confirmation on, the user has no session right after signing up, so the
+app is not allowed to insert into `users`.
+
 ```mermaid
 sequenceDiagram
     actor Person
@@ -52,12 +60,30 @@ sequenceDiagram
     participant Auth as Supabase Auth
     participant DB as users table
 
-    Person->>App: Sign up with email and password
-    App->>Auth: Create account
-    Auth-->>App: New user id
-    App->>DB: Create profile with the same id
+    Person->>App: Sign up with name, email and password
+    App->>Auth: signUp (the name goes in the metadata)
+    Auth->>DB: Trigger handle_new_user creates the profile with the same id
+    Auth-->>Person: Email with a 6-digit code
+    Person->>App: Types the code
+    App->>Auth: verifyOTP
+    Auth-->>App: Session starts
     Note over App,DB: From now on, the app uses this id for everything
 ```
+
+If someone tries to log in before typing the code, Supabase answers
+`email_not_confirmed`. The app then sends a new code and shows the code screen.
+
+### Email confirmation (dashboard settings)
+
+These settings are not in the SQL files. They are set in the Supabase dashboard:
+
+- **Authentication → Sign In / Providers:** "Confirm email" is on.
+- **Authentication → Sign In / Providers → Email:** minimum password length 8, email OTP length 6.
+- **Authentication → Emails → SMTP Settings:** custom SMTP with a Gmail account, so emails
+  reach any address. The default Supabase email service only sends to team members, 2 emails per hour.
+- **Authentication → Emails → Templates → Confirm signup:** the email shows the code with
+  `{{ .Token }}` instead of a link.
+- **Authentication → Rate Limits:** 30 emails per hour.
 
 ### Security rules (RLS)
 
@@ -136,7 +162,7 @@ gives XP, may give a badge and tells your friends. These actions live in
 | `nearby_places` | `p_lat`, `p_lng`, `p_radius_km` (default 5), `p_category` (optional) | Places around you, closest first. |
 | `nearby_quests` | `p_lat`, `p_lng`, `p_radius_km` (default 5) | Quests around you, closest first. |
 | `friends_on_map` | none | Friends sharing their location, with how far they are and the quest they are doing. |
-| `get_streak_summary` | none | Streak, points, quests per week, this week's active days and badges of the logged-in user. |
+| `get_streak_summary` | none | BQ4: XP, level, quests completed, current streak, this week's active days (Mon-Sun), quests per week (last 4 weeks) and every badge of the logged-in user, with its description, whether it is unlocked and the day it was earned. |
 | `get_quest_dropoff` | none | BQ8: for abandoned quests, the last step users had checked and how many abandons stopped there (all users, counts only). |
 
 ### What happens when the last step is checked
@@ -179,6 +205,16 @@ Steps with `requires_photo = true` need a photo. The app:
 The bucket is private. Each user can only upload, read, replace or delete files inside their own
 `<user id>/` folder.
 
+## Profile photos (Storage)
+
+The app uploads the user's photo to the public `avatars` bucket at `<user id>/avatar.jpg`
+and saves its public link in `users.profile_picture`. To remove the photo, it sets
+`profile_picture` back to empty.
+
+The bucket is public so friends can see the photo, but each user can only upload, replace
+or delete files inside their own `<user id>/` folder. Users without a photo see one of three
+default bear avatars, picked in the app from the user id.
+
 ## Telemetry
 
 The apps measure how long some requests take and save each measurement in `telemetry_events`.
@@ -197,6 +233,10 @@ queries at the end of `telemetry.sql` in the SQL editor.
 
 `seed_data.sql` creates these accounts. You can log in with them from the app.
 
+The `handle_new_user` trigger already creates their profiles when the accounts are created,
+so the insert into `users` in `seed_data.sql` ends with `on conflict (id) do update`
+to replace them with the test data (XP, level, streak...).
+
 | Name | Email | Password | Level | Tier |
 | --- | --- | --- | --- | --- |
 | Valentina Gomez | valentina.gomez@example.com | `password123` | 8 | Trailblazer |
@@ -212,6 +252,7 @@ Friendships between them:
 - Camila and Juan David are blocked.
 
 These are fake accounts for testing only. Never use them in production.
+
 
 ## Entity-relationship diagram
 
@@ -375,7 +416,7 @@ The profile of each person who uses the app.
 | `id` | Unique id. It is the same id as the person's login account. |
 | `name` | Full name. |
 | `email` | Email address. No two users can have the same one. |
-| `profile_picture` | Link to the profile photo. Can be empty. |
+| `profile_picture` | Public link to the profile photo in the `avatars` bucket. Can be empty (the app shows a default bear avatar). |
 | `current_xp` | Experience points the user has. Starts at 0. |
 | `level` | User level. Starts at 1. |
 | `current_streak` | How many days in a row the user has been active. |
