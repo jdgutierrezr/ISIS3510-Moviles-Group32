@@ -12,6 +12,7 @@ This folder has everything you need to build the Wandr database in Supabase.
 | `auth_trigger.sql` | Creates the `handle_new_user` trigger: when someone signs up, it creates their profile in `users`. |
 | `storage.sql` | Creates the private `quest-photos` bucket for the photos of quest steps and the public `avatars` bucket for profile photos. |
 | `telemetry.sql` | Creates the `telemetry_events` table the apps use to answer BQ1 and BQ2. |
+| `bq1.sql` | Adds `get_recommendation_load_time`, the function the app calls to show BQ1 (average load time of quest recommendations). Run it after `telemetry.sql`. |
 | `seed_data.sql` | Fills the tables with fake data for testing. |
 | `bq11_seed_data.sql` | Optional, rerunnable BQ11 visualization seed: labeled demo neighborhoods and isolated analytics identities. Run after `bq11.sql` in the demo project; existing quests/reviews stay unchanged. |
 | `bq11.sql` | Additive neighborhood catalog and cross-user activity RPC; see [BQ11 deployment and tests](BQ11.md). |
