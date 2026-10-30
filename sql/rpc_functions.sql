@@ -725,6 +725,102 @@ as $$
 $$;
 
 -- ============================================
+-- create_bq13_notification: notify active users
+-- who completed 5+ quests this month and have
+-- not tried a sponsored quest
+-- ============================================
+
+create or replace function public.create_bq13_notification(
+  p_user_id uuid
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  completed_count integer;
+  has_attempted boolean;
+  sponsored_title text;
+  sponsored_sponsor text;
+begin
+
+  if auth.uid() is null then
+    raise exception 'Not authenticated';
+  end if;
+
+  if p_user_id <> auth.uid() then
+    raise exception 'You can only create notifications for yourself';
+  end if;
+
+  select count(*)
+  into completed_count
+  from quest_completions
+  where user_id = p_user_id
+    and status = 'completed'
+    and completed_at >= date_trunc('month', now());
+
+  if completed_count < 5 then
+    return false;
+  end if;
+
+  select exists (
+    select 1
+    from sponsored_quest_attempts
+    where user_id = p_user_id
+  )
+  into has_attempted;
+
+  if has_attempted then
+    return false;
+  end if;
+
+  select
+    q.title,
+    sq.sponsor_name
+  into
+    sponsored_title,
+    sponsored_sponsor
+  from sponsored_quests sq
+  join quests q on q.id = sq.quest_id
+  where sq.is_active = true
+  limit 1;
+
+  if sponsored_title is null then
+    return false;
+  end if;
+
+  if exists (
+    select 1
+    from notifications
+    where user_id = p_user_id
+      and type = 'sponsored_quest_opportunity'
+      and read_status = false
+  ) then
+    return false;
+  end if;
+
+  insert into notifications (
+    user_id,
+    type,
+    content,
+    read_status
+  )
+  values (
+    p_user_id,
+    'sponsored_quest_opportunity',
+    'You have a new sponsored quest opportunity: '
+      || sponsored_title
+      || ' by '
+      || sponsored_sponsor,
+    false
+  );
+
+  return true;
+end;
+$$;
+
+-- ============================================
 -- Permissions: only logged-in users can call the RPC functions
 -- ============================================
 
@@ -741,6 +837,7 @@ revoke execute on function public.nearby_quests(double precision, double precisi
 revoke execute on function public.friends_on_map() from public, anon;
 revoke execute on function public.get_streak_summary() from public, anon;
 revoke execute on function public.get_quest_dropoff() from public, anon;
+revoke execute on function public.create_bq13_notification(uuid) from public, anon;
 
 grant execute on function public.start_quest(uuid) to authenticated;
 grant execute on function public.complete_objective(uuid, uuid, text) to authenticated;
@@ -753,3 +850,4 @@ grant execute on function public.nearby_quests(double precision, double precisio
 grant execute on function public.friends_on_map() to authenticated;
 grant execute on function public.get_streak_summary() to authenticated;
 grant execute on function public.get_quest_dropoff() to authenticated;
+grant execute on function public.create_bq13_notification(uuid) to authenticated;

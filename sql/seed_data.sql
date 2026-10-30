@@ -55,6 +55,24 @@ insert into quests (id, place_id, title, description, difficulty_level, estimate
 ('b1111111-0000-0000-0000-000000000007', 'a1111111-0000-0000-0000-000000000007', 'Climb Monserrate', 'Reach the top of Cerro de Monserrate on foot', 4, 120, 90, 'https://example.com/quests/7.jpg');
 
 -- ============================================
+-- Sponsored Quests
+-- ============================================
+
+insert into sponsored_quests (
+  quest_id,
+  sponsor_name,
+  description,
+  is_active
+) values
+(
+  'b1111111-0000-0000-0000-000000000002',
+  'Andrés Carne de Res',
+  'A sponsored nightlife quest for active Wandr users.',
+  true
+);
+
+
+-- ============================================
 -- QuestObjectives
 -- ============================================
 

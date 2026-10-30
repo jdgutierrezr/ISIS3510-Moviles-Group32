@@ -25,6 +25,8 @@ alter table badges enable row level security;
 alter table user_badges enable row level security;
 alter table friendships enable row level security;
 alter table notifications enable row level security;
+alter table sponsored_quests enable row level security;
+alter table sponsored_quest_attempts enable row level security;
 
 -- ============================================
 -- Helper: accepted friendship between two users
@@ -83,6 +85,25 @@ create policy "badges: read" on badges
 
 create policy "events: read" on events
   for select to authenticated using (true);
+
+
+-- ============================================
+-- Sponsored Quests
+-- ============================================
+
+create policy "sponsored_quests: read active" on sponsored_quests
+  for select to authenticated
+  using (is_active = true);
+
+
+-- ============================================
+-- SponsoredQuestAttempts
+-- ============================================
+
+create policy "sponsored_quest_attempts: read own" on sponsored_quest_attempts
+  for select to authenticated
+  using (user_id = auth.uid());
+  
 
 -- ============================================
 -- QuestCompletions
