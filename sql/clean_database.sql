@@ -31,6 +31,10 @@ drop table if exists
   users
 cascade;
 
+drop trigger if exists on_auth_user_created on auth.users;
+drop function if exists public.handle_new_user();
+
+
 drop function if exists
   public.are_friends(uuid, uuid),
   public.distance_km(double precision, double precision, double precision, double precision),
@@ -45,6 +49,11 @@ drop function if exists
   public.nearby_quests(double precision, double precision, double precision),
   public.friends_on_map(),
   public.neighborhood_quest_activity(integer)
+  public.neighborhood_quest_activity(integer),
+  public.get_streak_summary(),
+  public.get_quest_dropoff()
+
+  
 cascade;
 
 -- Remove seed users from Supabase Auth (real sign-ups are kept)

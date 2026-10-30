@@ -154,9 +154,11 @@ There are two kinds of calls:
 
 | Screen                     | What you need                            | Call                                                                                                                                                  |
 | -------------------------- | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Sign up**                | Create the account                       | Auth `signUp`                                                                                                                                         |
-|                            | Create the profile (right after sign up) | Table · `POST /users` with `id`, `name`, `email`                                                                                                      |
-| **Log in**                 | Start a session                          | Auth `signIn`                                                                                                                                         |
+| **Sign up**                | Create the account                       | Auth `signUp` with the name in the metadata (`data: { name }`). The `handle_new_user` trigger creates the profile in `users`; the app does not insert it. |
+|                            | Confirm the email                        | Auth `verifyOTP` with the email, the 6-digit code from the email and type `signup`. The session starts here.                                          |
+|                            | Send the code again                      | Auth `resend` with the email and type `signup`                                                                                                        |
+| **Log in**                 | Start a session                          | Auth `signIn`. If the email is not confirmed yet, it fails with `email_not_confirmed`: send a new code and show the code screen.                      |
+| **Log out**                | End the session                          | Auth `signOut`                                                                                                                                        |
 | **Onboarding**             | List of interests                        | Table · `GET /tags`                                                                                                                                   |
 |                            | Save interests                           | Table · `POST /user_interests` (a list of `{user_id, tag_id}`)                                                                                        |
 |                            | Save energy level                        | Table · `PATCH /users?id=eq.me` with `energy_level`                                                                                                   |
@@ -180,9 +182,12 @@ There are two kinds of calls:
 |                            | Accept a request                         | Function · `accept_friend_request(p_friendship_id)`                                                                                                   |
 |                            | Block                                    | Table · `PATCH /friendships?id=eq.<id>` with `status: "blocked"`                                                                                      |
 |                            | Remove friend / decline                  | Table · `DELETE /friendships?id=eq.<id>`                                                                                                              |
-| **Profile / Side Quests**  | Level, XP, streak, tier                  | Table · `GET /users?id=eq.me`                                                                                                                         |
+| **Profile / Side Quests**  | Streak summary for BQ4 (XP, level, streak, this week, last 4 weeks, badges) | Function · `get_streak_summary()`                                                                                                  |
+|                            | Level, XP, streak, tier                  | Table · `GET /users?id=eq.me`                                                                                                                         |
 |                            | My badges                                | Table · `GET /user_badges?user_id=eq.me&select=earned_at,badges(*)`                                                                                   |
 |                            | Quest history                            | Table · `GET /quest_completions?user_id=eq.me&status=eq.completed&select=completed_at,quests(title,points_reward)`                                    |
+|                            | Change the profile photo                 | Storage · upload to `avatars/<me>/avatar.jpg` (public bucket), then `PATCH /users?id=eq.me` with `profile_picture` = its public link                   |
+|                            | Remove the profile photo                 | Table · `PATCH /users?id=eq.me` with `profile_picture: null` (the app shows a default bear avatar)                                                     |
 | **Notifications**          | My notifications                         | Table · `GET /notifications?order=created_at.desc`                                                                                                    |
 |                            | Mark as read                             | Table · `PATCH /notifications?id=eq.<id>` with `read_status: true`                                                                                    |
 | **Any screen**             | Send telemetry (BQ1, BQ2)                | Table · `POST /telemetry_events` (a list of rows, see the [database docs](sql/README.md#telemetry))                                                    |
@@ -204,6 +209,28 @@ val me = supabase.auth.currentUserOrNull()?.id
 // Swift
 try await supabase.auth.signIn(email: "valentina.gomez@example.com", password: "password123")
 let me = try await supabase.auth.session.user.id
+```
+
+Sign up sends an email with a 6-digit code. The session starts only after the code is checked:
+
+```kotlin
+// Kotlin
+supabase.auth.signUpWith(Email) {
+    email = "new.user@example.com"
+    password = "secret123"
+    data = buildJsonObject { put("name", "New User") }
+}
+supabase.auth.verifyEmailOtp(type = OtpType.Email.SIGNUP, email = "new.user@example.com", token = "123456")
+```
+
+```swift
+// Swift
+try await supabase.auth.signUp(
+    email: "new.user@example.com",
+    password: "secret123",
+    data: ["name": .string("New User")]
+)
+try await supabase.auth.verifyOTP(email: "new.user@example.com", token: "123456", type: .signup)
 ```
 
 ### Read a table
