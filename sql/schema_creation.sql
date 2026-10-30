@@ -23,7 +23,7 @@ create type friendship_status as enum (
 );
 
 create type notification_type as enum (
-  'event_reminder', 'nearby_new_quest', 'completed_friend_quest', 'unlocked_badge', 'friend_request'
+  'event_reminder', 'nearby_new_quest', 'completed_friend_quest', 'unlocked_badge', 'friend_request', 'sponsored_quest_opportunity'
 );
 
 create type user_tier as enum (
@@ -230,6 +230,32 @@ create table friendships (
   created_at timestamptz not null default now(),
   check (user_id_1 <> user_id_2),
   unique (user_id_1, user_id_2)
+);
+
+-- ============================================
+-- Sponsored Quests
+-- ============================================
+
+create table sponsored_quests (
+  id uuid primary key default gen_random_uuid(),
+  quest_id uuid not null references quests(id) on delete cascade,
+  sponsor_name text not null,
+  description text,
+  is_active boolean not null default true,
+  created_at timestamptz not null default now(),
+  unique (quest_id)
+);
+
+-- ============================================
+-- Sponsored Quest Attempts
+-- ============================================
+
+create table sponsored_quest_attempts (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references users(id) on delete cascade,
+  sponsored_quest_id uuid not null references sponsored_quests(id) on delete cascade,
+  attempted_at timestamptz not null default now(),
+  unique (user_id, sponsored_quest_id)
 );
 
 -- ============================================
