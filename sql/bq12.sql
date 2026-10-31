@@ -1,6 +1,6 @@
 -- BQ12: category engagement for business accounts.
 -- Run after schema_creation.sql, rls_rules.sql and rpc_functions.sql.
--- The migration does not grant business access or install a default access code.
+-- Installs the shared testing code 1234. Accounts still activate through the RPC.
 begin;
 
 alter table public.users
@@ -9,18 +9,18 @@ alter table public.users
 -- Existing profile writes use column-level grants. Never grant this column to clients.
 revoke insert (is_business), update (is_business) on public.users from public, anon, authenticated;
 
--- One shared invitation code for the initial demo. Only its SHA-256 hash is stored.
--- Configure through the SQL editor with a long randomly generated code (16–128 chars):
--- insert into public.business_access_config(singleton, code_hash)
--- values (true, sha256(convert_to('<replace with random code>', 'UTF8')))
--- on conflict (singleton) do update set code_hash = excluded.code_hash;
--- Share the code with testers outside the app; never embed it in the client.
+-- One shared invitation code for the demo. Only its SHA-256 hash is stored.
 create table if not exists public.business_access_config (
   singleton boolean primary key default true check (singleton),
   code_hash bytea not null check (octet_length(code_hash) = 32)
 );
 alter table public.business_access_config enable row level security;
 revoke all on public.business_access_config from public, anon, authenticated;
+
+-- Running this migration also replaces any previously configured code with 1234.
+insert into public.business_access_config(singleton, code_hash)
+values (true, sha256(convert_to('1234', 'UTF8')))
+on conflict (singleton) do update set code_hash = excluded.code_hash;
 
 create or replace function public.activate_business_access(p_code text)
 returns boolean
@@ -40,7 +40,7 @@ begin
     return true;
   end if;
 
-  if p_code is null or length(p_code) not between 16 and 128 then
+  if p_code is null or length(p_code) not between 4 and 128 then
     raise exception 'Invalid business access code' using errcode = '22023';
   end if;
   if not exists (

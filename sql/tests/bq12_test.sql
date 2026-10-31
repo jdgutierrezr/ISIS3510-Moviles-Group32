@@ -7,22 +7,26 @@ insert into public.users(id, name, email)
 select id, 'Test ' || id, id || '@test.invalid' from auth.users;
 
 -- No configured code must mean no activation.
+begin;
+delete from public.business_access_config;
 select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000001', false);
 set role authenticated;
 do $$ begin
   begin
-    perform public.activate_business_access('bq12-local-test-code-only');
+    perform public.activate_business_access('1234');
     raise exception 'Activated without a configured code';
   exception when invalid_parameter_value then null; end;
 end $$;
 reset role;
+rollback;
 
-insert into public.business_access_config(code_hash)
-values (sha256(convert_to('bq12-local-test-code-only', 'UTF8')));
+-- Simulate an installation with a previous code, then reapply the migration.
+update public.business_access_config
+set code_hash = sha256(convert_to('previous-demo-code', 'UTF8'));
 update public.users set is_business = true
 where id = '10000000-0000-0000-0000-000000000004';
 
--- Reapplying must preserve the code and existing business accounts.
+-- Reapplying must configure 1234 and preserve existing business accounts.
 \ir ../bq12.sql
 do $$ begin
   if not (select is_business from public.users
@@ -30,11 +34,16 @@ do $$ begin
     raise exception 'Migration reset business access';
   end if;
   if (select count(*) from public.business_access_config) <> 1 then
-    raise exception 'Migration reset the invitation code';
+    raise exception 'Migration did not preserve the single configuration row';
+  end if;
+  if not exists (select 1 from public.business_access_config
+    where code_hash = sha256(convert_to('1234', 'UTF8'))) then
+    raise exception 'Migration did not configure the testing code 1234';
   end if;
 end $$;
 
 begin;
+select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000001', true);
 insert into public.places(id, name, category, latitude, longitude) values
 ('20000000-0000-0000-0000-000000000001', 'Park', 'park', 4.6, -74.0),
 ('20000000-0000-0000-0000-000000000002', 'Museum', 'museum', 4.6, -74.0),
@@ -90,13 +99,13 @@ do $$ declare invalid_code text; r jsonb; begin
     raise exception 'Client changed activation code';
   exception when insufficient_privilege then null; end;
 
-  foreach invalid_code in array array[null, '', 'short', repeat('x', 129), 'wrong-long-invitation-code'] loop
+  foreach invalid_code in array array[null, '', '123', '4321', repeat('x', 129), 'wrong-long-invitation-code'] loop
     begin
       perform public.activate_business_access(invalid_code);
       raise exception 'Invalid code accepted';
     exception when invalid_parameter_value then null; end;
   end loop;
-  if not public.activate_business_access('bq12-local-test-code-only') then
+  if not public.activate_business_access('1234') then
     raise exception 'Valid activation failed';
   end if;
   if not public.activate_business_access(null) then
@@ -158,7 +167,7 @@ do $$ begin
     raise exception 'Missing identity read report';
   exception when insufficient_privilege then null; end;
   begin
-    perform public.activate_business_access('bq12-local-test-code-only');
+    perform public.activate_business_access('1234');
     raise exception 'Missing identity activated';
   exception when insufficient_privilege then null; end;
 end $$;
@@ -170,7 +179,7 @@ do $$ begin
     raise exception 'Anonymous report access';
   exception when insufficient_privilege then null; end;
   begin
-    perform public.activate_business_access('bq12-local-test-code-only');
+    perform public.activate_business_access('1234');
     raise exception 'Anonymous activation';
   exception when insufficient_privilege then null; end;
 end $$;
