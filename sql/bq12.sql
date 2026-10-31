@@ -10,9 +10,9 @@ alter table public.users
 revoke insert (is_business), update (is_business) on public.users from public, anon, authenticated;
 
 -- One shared invitation code for the initial demo. Only its SHA-256 hash is stored.
--- Configure through the SQL editor with a long randomly generated code (16–128 chars):
+-- Configure through the SQL editor with a code (4–128 chars; short codes are supported for testing):
 -- insert into public.business_access_config(singleton, code_hash)
--- values (true, sha256(convert_to('<replace with random code>', 'UTF8')))
+-- values (true, sha256(convert_to('<replace with access code>', 'UTF8')))
 -- on conflict (singleton) do update set code_hash = excluded.code_hash;
 -- Share the code with testers outside the app; never embed it in the client.
 create table if not exists public.business_access_config (
@@ -40,7 +40,7 @@ begin
     return true;
   end if;
 
-  if p_code is null or length(p_code) not between 16 and 128 then
+  if p_code is null or length(p_code) not between 4 and 128 then
     raise exception 'Invalid business access code' using errcode = '22023';
   end if;
   if not exists (
