@@ -7,6 +7,8 @@ insert into public.users(id, name, email)
 select id, 'Test ' || id, id || '@test.invalid' from auth.users;
 
 -- No configured code must mean no activation.
+begin;
+delete from public.business_access_config;
 select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000001', false);
 set role authenticated;
 do $$ begin
@@ -16,13 +18,15 @@ do $$ begin
   exception when invalid_parameter_value then null; end;
 end $$;
 reset role;
+rollback;
 
-insert into public.business_access_config(code_hash)
-values (sha256(convert_to('1234', 'UTF8')));
+-- Simulate an installation with a previous code, then reapply the migration.
+update public.business_access_config
+set code_hash = sha256(convert_to('previous-demo-code', 'UTF8'));
 update public.users set is_business = true
 where id = '10000000-0000-0000-0000-000000000004';
 
--- Reapplying must preserve the code and existing business accounts.
+-- Reapplying must configure 1234 and preserve existing business accounts.
 \ir ../bq12.sql
 do $$ begin
   if not (select is_business from public.users
@@ -30,11 +34,16 @@ do $$ begin
     raise exception 'Migration reset business access';
   end if;
   if (select count(*) from public.business_access_config) <> 1 then
-    raise exception 'Migration reset the invitation code';
+    raise exception 'Migration did not preserve the single configuration row';
+  end if;
+  if not exists (select 1 from public.business_access_config
+    where code_hash = sha256(convert_to('1234', 'UTF8'))) then
+    raise exception 'Migration did not configure the testing code 1234';
   end if;
 end $$;
 
 begin;
+select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000001', true);
 insert into public.places(id, name, category, latitude, longitude) values
 ('20000000-0000-0000-0000-000000000001', 'Park', 'park', 4.6, -74.0),
 ('20000000-0000-0000-0000-000000000002', 'Museum', 'museum', 4.6, -74.0),
