@@ -821,6 +821,147 @@ end;
 $$;
 
 -- ============================================
+-- get_reengagement_insights: BQ14
+-- Identifies users whose quest activity dropped
+-- by approximately 30% and recommends the most
+-- relevant active sponsored quest.
+-- ============================================
+
+create or replace function public.get_reengagement_insights()
+returns table (
+  user_id uuid,
+  user_name text,
+  activity_drop_percentage numeric,
+  preferred_category text,
+  recommended_quest_id uuid,
+  recommended_quest_title text,
+  recommended_quest_description text,
+  sponsor_name text,
+  reengagement_score numeric
+)
+language plpgsql
+security definer
+as $function$
+begin
+    return query
+    with recent_activity as (
+        select
+            qc.user_id as recent_user_id,
+            count(*)::numeric as recent_count
+        from quest_completions qc
+        where qc.status = 'completed'
+          and qc.completed_at >= now() - interval '14 days'
+        group by qc.user_id
+    ),
+    previous_activity as (
+        select
+            qc.user_id as previous_user_id,
+            count(*)::numeric as previous_count
+        from quest_completions qc
+        where qc.status = 'completed'
+          and qc.completed_at >= now() - interval '28 days'
+          and qc.completed_at < now() - interval '14 days'
+        group by qc.user_id
+    ),
+    activity_drop as (
+        select
+            u.id as activity_user_id,
+            u.name as activity_user_name,
+            coalesce(r.recent_count, 0) as recent_count,
+            coalesce(p.previous_count, 0) as previous_count,
+            round(
+                (
+                    (
+                        coalesce(p.previous_count, 0)
+                        - coalesce(r.recent_count, 0)
+                    )
+                    / nullif(coalesce(p.previous_count, 0), 0)
+                ) * 100,
+                2
+            ) as drop_percentage
+        from users u
+        left join recent_activity r
+            on r.recent_user_id = u.id
+        left join previous_activity p
+            on p.previous_user_id = u.id
+    ),
+    eligible_users as (
+        select *
+        from activity_drop
+        where previous_count > 0
+          and drop_percentage between 20 and 40
+    ),
+    user_categories as (
+        select
+            eu.activity_user_id as category_user_id,
+            p.category::text as preferred_category,
+            count(*) as category_count
+        from eligible_users eu
+        join quest_completions qc
+            on qc.user_id = eu.activity_user_id
+        join quests q
+            on q.id = qc.quest_id
+        join places p
+            on p.id = q.place_id
+        where qc.status = 'completed'
+        group by eu.activity_user_id, p.category
+    ),
+    preferred_categories as (
+        select distinct on (uc.category_user_id)
+            uc.category_user_id,
+            uc.preferred_category
+        from user_categories uc
+        order by uc.category_user_id, uc.category_count desc
+    ),
+    candidate_quests as (
+        select
+            eu.activity_user_id as candidate_user_id,
+            eu.activity_user_name as candidate_user_name,
+            eu.drop_percentage as candidate_drop_percentage,
+            pc.preferred_category::text as candidate_category,
+            sq.id as candidate_quest_id,
+            q.title as candidate_quest_title,
+            sq.description as candidate_quest_description,
+            sq.sponsor_name as candidate_sponsor_name,
+            (
+                100
+                - abs(eu.drop_percentage - 30)
+                + case
+                    when p.category::text = pc.preferred_category then 20
+                    else 0
+                  end
+            )::numeric as candidate_score
+        from eligible_users eu
+        join preferred_categories pc
+            on pc.category_user_id = eu.activity_user_id
+        join sponsored_quests sq
+            on sq.is_active = true
+        join quests q
+            on q.id = sq.quest_id
+        join places p
+            on p.id = q.place_id
+    )
+    select
+        c.candidate_user_id,
+        c.candidate_user_name,
+        c.candidate_drop_percentage,
+        c.candidate_category,
+        c.candidate_quest_id,
+        c.candidate_quest_title,
+        c.candidate_quest_description,
+        c.candidate_sponsor_name,
+        c.candidate_score
+    from candidate_quests c
+    where c.candidate_score = (
+        select max(c2.candidate_score)
+        from candidate_quests c2
+        where c2.candidate_user_id = c.candidate_user_id
+    )
+    order by c.candidate_score desc;
+end;
+$function$;
+
+-- ============================================
 -- Permissions: only logged-in users can call the RPC functions
 -- ============================================
 
@@ -838,6 +979,7 @@ revoke execute on function public.friends_on_map() from public, anon;
 revoke execute on function public.get_streak_summary() from public, anon;
 revoke execute on function public.get_quest_dropoff() from public, anon;
 revoke execute on function public.create_bq13_notification(uuid) from public, anon;
+revoke execute on function public.get_reengagement_insights() from public, anon;
 
 grant execute on function public.start_quest(uuid) to authenticated;
 grant execute on function public.complete_objective(uuid, uuid, text) to authenticated;
@@ -851,3 +993,4 @@ grant execute on function public.friends_on_map() to authenticated;
 grant execute on function public.get_streak_summary() to authenticated;
 grant execute on function public.get_quest_dropoff() to authenticated;
 grant execute on function public.create_bq13_notification(uuid) to authenticated;
+grant execute on function public.get_reengagement_insights() to authenticated;
